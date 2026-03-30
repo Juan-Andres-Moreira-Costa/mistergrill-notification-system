@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tu Pedido</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f8fafc;
+      padding: 1.5rem;
+      text-align: center;
+      color: #1e293b;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 400px;
+      margin: 0 auto;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #0f172a; }
+    .estado {
+      font-size: 1.25rem;
+      padding: 1rem;
+      border-radius: 8px;
+      margin: 1.5rem 0;
+      font-weight: 500;
+    }
+    .preparacion { background: #fef3c7; color: #92400e; }
+    .listo { 
+      background: #d1fae5; 
+      color: #065f46; 
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+    .btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 0.875rem 1.5rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 1rem;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    .info { font-size: 0.875rem; color: #64748b; margin-top: 1rem; }
+    .token { 
+      font-family: monospace; 
+      background: #f1f5f9; 
+      padding: 0.25rem 0.5rem; 
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🍔 Tu Pedido</h1>
+    
+    <div id="estado" class="estado preparacion">
+      ⏳ En preparación...
+    </div>
+    
+    <p id="pedido-id">Pedido: <span class="token" id="token-display">cargando...</span></p>
+    
+    <button id="btn-push" class="btn">🔔 Activar notificaciones</button>
+    
+    <p class="info">
+      Mantené esta página abierta o activá las notificaciones para ser avisado cuando tu pedido esté listo.
+    </p>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
