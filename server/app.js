@@ -5,6 +5,8 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import dotenv from 'dotenv';
+import QRCode from 'qrcode';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -29,6 +31,11 @@ webpush.setVapidDetails(
 // Store en memoria (reemplazar con DB en producción)
 const suscripciones = new Map(); // token -> subscription
 const estados = new Map(); // token -> { estado, timestamp }
+
+// 🎨 Servir página de creación de pedidos
+app.get('/crear-pedido', (req, res) => {
+  res.sendFile(join(__dirname, '../public/crear-pedido.html'));
+});
 
 // 📥 Suscribirse a push
 app.post('/api/subscribe', async (req, res) => {
@@ -79,6 +86,58 @@ app.post('/api/pedido/:token/listo', async (req, res) => {
   res.json({ success: true, estado: 'listo' });
 });
 
+app.get('/api/config', (req, res) => {
+  res.json({
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY
+  });
+});
+
+// 🆕 Endpoint: Crear nuevo pedido con QR
+app.get('/api/pedido/crear', async (req, res) => {
+  console.log('🎯 [DEBUG] Endpoint /crear HIT!');
+  try {
+    // 1. Generar token único y seguro (URL-safe)
+    const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+    
+    // 2. URL que tendrá el QR (ajustar según tu dominio en producción)
+    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const pedidoUrl = `${baseUrl}/pedido?token=${token}`;
+    
+    // 3. Generar imagen QR en base64 (para mostrar en HTML o imprimir)
+    const qrImage = await QRCode.toDataURL(pedidoUrl, {
+      width: 256,
+      margin: 2,
+      color: {
+        dark: '#000000',  // Color del QR
+        light: '#FFFFFF'  // Fondo
+      }
+    });
+    
+    // 4. Guardar estado inicial del pedido (en memoria para MVP)
+    estados.set(token, { 
+      estado: 'preparacion', 
+      timestamp: new Date(),
+      numero: Math.floor(1000 + Math.random() * 9000) // Número visible para cocina
+    });
+    
+    console.log(`🆕 Pedido creado: #${estados.get(token).numero} (token: ${token})`);
+    
+    // 5. Responder con datos para mostrar
+    res.json({
+      success: true,
+      pedidoNumero: estados.get(token).numero,
+      token,
+      qrImage,          // DataURL para <img src="">
+      pedidoUrl,        // URL para compartir o debug
+      estado: 'preparacion'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error creando pedido:', error);
+    res.status(500).json({ error: 'Error generando QR', details: error.message });
+  }
+});
+
 // 🔄 Consultar estado (para polling)
 app.get('/api/pedido/:token', (req, res) => {
   const { token } = req.params;
@@ -86,16 +145,11 @@ app.get('/api/pedido/:token', (req, res) => {
   res.json(estado);
 });
 
-app.get('/api/config', (req, res) => {
-  res.json({
-    vapidPublicKey: process.env.VAPID_PUBLIC_KEY
-  });
-});
-
 // 🎨 Servir página de pedido
 app.get('/pedido', (req, res) => {
   res.sendFile(join(__dirname, '../public/index.html'));
 });
+
 
 // 🚀 Endpoint de salud
 app.get('/health', (req, res) => {
