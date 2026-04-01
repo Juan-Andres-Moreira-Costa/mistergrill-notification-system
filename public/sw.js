@@ -17,11 +17,12 @@ self.addEventListener('activate', (event) => {
 
 // 🔔 Evento: Push recibido
 self.addEventListener('push', (event) => {
-  // Datos por defecto
   let notificationData = {
     title: '🍔 Tu pedido está listo',
     body: 'Acercate a la barra para retirar',
-    url: '/'
+    url: '/',
+    priority: 'high',
+    visibility: 'public'
   };
 
   // Intentar leer datos del push si existen

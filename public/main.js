@@ -26,21 +26,28 @@ const getPedidoToken = () => {
   return params.get('token');
 };
 
-const actualizarUI = (estado) => {
+const actualizarUI = (estado, numero) => {
   const el = document.getElementById('estado');
+  const numeroEl = document.getElementById('numero-pedido');
+  
+  // Mostrar número de pedido si existe
+  if (numero) {
+    numeroEl.textContent = `#${numero}`;
+    numeroEl.style.display = 'block';
+    document.getElementById('pedido-id').style.display = 'none'; // Ocultar token
+  }
+  
   if (estado === 'listo') {
     el.className = 'estado listo';
     el.textContent = '🎉 ¡Tu pedido está listo! Retirá en barra';
     
-    // 🔊 Sonido opcional con fallback seguro
+    // Sonido opcional con fallback seguro
     try {
       const audio = new Audio('/sounds/notify.mp3');
       audio.play().catch((err) => {
-        // Silenciar errores: sonido opcional
         console.log('[Audio] Sonido no disponible (opcional):', err.message);
       });
     } catch (e) {
-      // Silenciar errores de creación de Audio
       console.log('[Audio] No se pudo crear el elemento de audio');
     }
   }
@@ -103,8 +110,11 @@ const consultarEstado = async (token) => {
     const res = await fetch(`/api/pedido/${token}`);
     const data = await res.json();
     if (data.estado === 'listo') {
-      actualizarUI('listo');
-      return true; // pedido listo, podemos parar el polling
+      actualizarUI('listo', data.numero);
+      return true;
+    } else {
+      // Mostrar número incluso si está en preparación
+      actualizarUI('preparacion', data.numero);
     }
   } catch (err) {
     console.error('Error consultando estado:', err);
@@ -112,7 +122,7 @@ const consultarEstado = async (token) => {
   return false;
 };
 
-const iniciarPolling = (token, intervalo = 30000) => {
+const iniciarPolling = (token, intervalo = 15000) => { // 15 segundos en vez de 30
   const id = setInterval(async () => {
     const listo = await consultarEstado(token);
     if (listo) {
