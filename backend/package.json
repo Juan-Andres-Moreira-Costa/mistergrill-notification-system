@@ -1,0 +1,23 @@
+{
+  "name": "mister-grill-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "qrcode": "^1.5.3",
+    "web-push": "^3.6.7"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
