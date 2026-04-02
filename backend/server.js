@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import dotenv from 'dotenv';
+import { requireAuth } from './middleware/auth.js';
 import db, { 
   generarNumeroPedido, 
   crearPedido, 
@@ -29,13 +30,13 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// ===== SEGURIDAD: Helmet (Headers HTTP seguros) =====
+// ===== SEGURIDAD: Helmet =====
 app.use(helmet({
-  contentSecurityPolicy: false, // Desactivar para permitir scripts inline si es necesario
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
-// ===== SEGURIDAD: CORS configurado =====
+// ===== SEGURIDAD: CORS =====
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:10000',
   credentials: true,
@@ -43,10 +44,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// ===== SEGURIDAD: Rate Limiting (Prevenir fuerza bruta) =====
+// ===== SEGURIDAD: Rate Limiting =====
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5, // 5 intentos por ventana
+  windowMs: 15 * 60 * 1000,
+  max: 5,
   message: { 
     error: 'Demasiados intentos de login', 
     message: 'Por seguridad, intente nuevamente en 15 minutos' 
@@ -60,20 +61,19 @@ app.use(express.json());
 app.use(express.static(join(__dirname, '../frontend/public')));
 app.use(express.urlencoded({ extended: true }));
 
-// ===== SEGURIDAD: Session Configuration =====
+// ===== SEGURIDAD: Session =====
 app.use(session({
   secret: process.env.SESSION_SECRET || 'cambia-esto-por-un-secreto-muy-largo',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // false en desarrollo
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     sameSite: 'lax',
     maxAge: parseInt(process.env.SESSION_EXPIRY) || 2 * 60 * 60 * 1000,
     path: '/'
   },
   name: 'mister-grill-session',
-  store: undefined // En producción, usar connect-pg-simple o similar
 }));
 
 // ===== Middleware de autenticación global =====
@@ -84,38 +84,32 @@ app.use((req, res, next) => {
 });
 
 // ============================================
-//  RUTAS PÚBLICAS (Sin autenticación)
+//  RUTAS PÚBLICAS
 // ============================================
 
-// Página de pedido del cliente
 app.get('/pedido', (req, res) => {
   res.sendFile(join(__dirname, '../frontend/public/index.html'));
 });
 
-// Config VAPID (público, solo clave pública)
 app.get('/api/config', (req, res) => {
   res.json({ vapidPublicKey: process.env.VAPID_PUBLIC_KEY });
 });
 
-// Health check (público)
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
 
 // ============================================
-// 🔑 RUTAS DE AUTENTICACIÓN
+// 🔑 AUTENTICACIÓN
 // ============================================
 
-// Página de login
 app.get('/login', (req, res) => {
-  // Si ya está autenticado, redirigir al panel
   if (req.session?.isAuthenticated) {
     return res.redirect('/cocina');
   }
   res.sendFile(join(__dirname, '../frontend/public/login.html'));
 });
 
-// POST Login
 app.post('/api/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -126,7 +120,6 @@ app.post('/api/login', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
     }
     
-    // ✅ DEFINIR usuarios AQUÍ (dentro del endpoint)
     const usuarios = [
       { 
         username: process.env.STAFF_USERNAME_1, 
@@ -138,11 +131,8 @@ app.post('/api/login', loginLimiter, async (req, res) => {
         hash: process.env.STAFF_PASSWORD_HASH_2, 
         role: 'cajero' 
       }
-    ].filter(u => u.username && u.hash); // Filtrar usuarios sin credentials
+    ].filter(u => u.username && u.hash);
     
-    console.log('🔍 [LOGIN] Usuarios configurados:', usuarios.map(u => u.username));
-    
-    // Buscar usuario
     const usuarioEncontrado = usuarios.find(u => u.username === username);
     
     if (!usuarioEncontrado) {
@@ -150,7 +140,6 @@ app.post('/api/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
     
-    // Verificar contraseña con bcrypt
     const passwordValid = await bcrypt.compare(password, usuarioEncontrado.hash);
     
     if (!passwordValid) {
@@ -158,7 +147,6 @@ app.post('/api/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
     
-    // ✅ Login exitoso - Crear sesión
     req.session.isAuthenticated = true;
     req.session.user = {
       username: usuarioEncontrado.username,
@@ -166,7 +154,6 @@ app.post('/api/login', loginLimiter, async (req, res) => {
       loginTime: new Date().toISOString()
     };
     
-    // ✅ Guardar sesión explícitamente
     req.session.save((err) => {
       if (err) {
         console.error('❌ [LOGIN] Error guardando sesión:', err);
@@ -174,13 +161,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
       }
       
       console.log(`✅ [LOGIN] Éxito: ${usuarioEncontrado.username} (${usuarioEncontrado.role})`);
-      console.log(`✅ [LOGIN] Session ID: ${req.sessionID}`);
-      
-      res.json({ 
-        success: true, 
-        message: 'Login exitoso',
-        redirect: '/cocina'
-      });
+      res.json({ success: true, message: 'Login exitoso', redirect: '/cocina' });
     });
     
   } catch (error) {
@@ -192,8 +173,6 @@ app.post('/api/login', loginLimiter, async (req, res) => {
   }
 });
 
-// POST Logout
-// 🔐 POST Logout
 app.post('/api/logout', (req, res) => {
   const username = req.session?.user?.username;
   
@@ -203,7 +182,6 @@ app.post('/api/logout', (req, res) => {
       return res.status(500).json({ error: 'Error cerrando sesión' });
     }
     
-    // Limpiar cookie
     res.clearCookie('mister-grill-session', {
       path: '/',
       httpOnly: true,
@@ -216,7 +194,6 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-// Verificar estado de sesión
 app.get('/api/auth/status', (req, res) => {
   res.json({
     isAuthenticated: req.session?.isAuthenticated || false,
@@ -225,23 +202,18 @@ app.get('/api/auth/status', (req, res) => {
 });
 
 // ============================================
-// 🔒 RUTAS PROTEGIDAS (Requieren autenticación)
+// 🔒 RUTAS PROTEGIDAS
 // ============================================
 
-// Importar middleware
-import { requireAuth } from './middleware/auth.js';
-
-// Panel de cocina (PROTEGIDO)
 app.get('/cocina', requireAuth, (req, res) => {
   res.sendFile(join(__dirname, '../frontend/public/cocina.html'));
 });
 
-// Crear pedido (PROTEGIDO)
 app.get('/crear-pedido', requireAuth, (req, res) => {
   res.sendFile(join(__dirname, '../frontend/public/crear-pedido.html'));
 });
 
-// API: Crear nuevo pedido con QR (PROTEGIDO)
+// API: Crear nuevo pedido con QR
 app.get('/api/pedido/crear', requireAuth, async (req, res) => {
   try {
     const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
@@ -254,18 +226,16 @@ app.get('/api/pedido/crear', requireAuth, async (req, res) => {
       color: { dark: '#000000', light: '#FFFFFF' }
     });
     
-    // ✅ Generar número secuencial persistente
-    const numero = generarNumeroPedido();
+    const numero = await generarNumeroPedido(); // ✅ await
     const creadoPor = req.session.user?.username;
     
-    // ✅ Guardar en base de datos
-    crearPedido({ token, numero, creadoPor });
+    await crearPedido({ token, numero, creadoPor }); // ✅ await
     
     console.log(`🆕 Pedido creado: ${numero} por ${creadoPor}`);
     
     res.json({
       success: true,
-      pedidoNumero: numero,  // Ej: 20260401-001
+      pedidoNumero: numero,
       token,
       qrImage,
       pedidoUrl,
@@ -277,134 +247,147 @@ app.get('/api/pedido/crear', requireAuth, async (req, res) => {
   }
 });
 
-// API: Listar pedidos (PROTEGIDO)
-app.get('/api/pedidos', requireAuth, (req, res) => {
-  const { filtro = 'todos' } = req.query;
-  
-  const pedidos = listarPedidos({ filtro });
-  
-  // Formatear respuesta
-  const pedidosFormateados = pedidos.map(p => ({
-    token: p.token,
-    numero: p.numero,
-    estado: p.estado,
-    timestamp: p.timestamp,
-    creadoHace: Math.floor((Date.now() - new Date(p.timestamp).getTime()) / 1000 / 60),
-    creadoPor: p.creado_por,
-    marcadoPor: p.marcado_listo_por,
-    retiradoPor: p.retirado_por
-  }));
-  
-  res.json({ 
-    success: true, 
-    total: pedidosFormateados.length, 
-    pedidos: pedidosFormateados 
-  });
-});
-
-// API: Marcar pedido como LISTO (PROTEGIDO)
-app.post('/api/pedido/:token/listo', requireAuth, async (req, res) => {
-  const { token } = req.params;
-  const pedido = obtenerPedido(token);
-  
-  if (!pedido) {
-    return res.status(404).json({ error: 'Pedido no encontrado' });
-  }
-  
-  // ✅ Actualizar en base de datos
-  actualizarEstadoPedido({ 
-    token, 
-    estado: 'listo', 
-    marcadoPor: req.session.user?.username,
-    campoTimestamp: 'listo'
-  });
-  
-  // ✅ Enviar notificación push si existe suscripción
-  const subscription = obtenerSuscripcionPush(token);
-  
-  if (subscription) {
-    try {
-      const payload = JSON.stringify({
-        title: `🎉 Pedido ${pedido.numero} LISTO`,
-        body: `Retirá en barra - Mister Grill`,
-        icon: '/icons/icon-192.png',
-        url: `/pedido?token=${token}`,
-        priority: 'high',
-        urgency: 'high'
-      });
-      
-      await webpush.sendNotification(subscription, payload, {
-        TTL: 300,
-        urgency: 'high'
-      });
-      console.log(`🔔 Push enviado: Pedido ${pedido.numero}`);
-    } catch (error) {
-      console.error('❌ Error enviando push:', error.body || error);
-    }
-  }
-  
-  res.json({ success: true, estado: 'listo', numero: pedido.numero });
-});
-
-// API: Marcar pedido como RETIRADO (PROTEGIDO)
-app.post('/api/pedido/:token/retirado', requireAuth, (req, res) => {
-  const { token } = req.params;
-  const pedido = obtenerPedido(token);
-  
-  if (!pedido) {
-    return res.status(404).json({ error: 'Pedido no encontrado' });
-  }
-  
-  actualizarEstadoPedido({ 
-    token, 
-    estado: 'retirado', 
-    marcadoPor: req.session.user?.username,
-    campoTimestamp: 'retiro'
-  });
-  
-  console.log(`✅ Pedido #${pedido.numero} marcado como RETIRADO por ${req.session.user?.username}`);
-  res.json({ success: true, estado: 'retirado', numero: pedido.numero });
-});
-
-// Consultar estado de pedido (público con token)
-app.get('/api/pedido/:token', (req, res) => {
-  const { token } = req.params;
-  const pedido = obtenerPedido(token);
-  
-  if (pedido) {
-    res.json({
-      estado: pedido.estado,
-      timestamp: pedido.timestamp,
-      numero: pedido.numero  // Ej: 20260401-001
-    });
-  } else {
-    res.json({ 
-      estado: 'no_encontrado', 
-      timestamp: new Date(),
-      numero: null 
-    });
-  }
-});
-
-// API: Suscribirse a push (PÚBLICO - los clientes necesitan esto)
-app.post('/api/subscribe', async (req, res) => {
-  const { pedidoToken, subscription } = req.body;
-  
-  if (!pedidoToken || !subscription) {
-    return res.status(400).json({ error: 'Faltan datos' });
-  }
-  
-  // ✅ Guardar en base de datos
-  guardarSuscripcionPush({ token: pedidoToken, subscription });
-  
-  console.log(`✅ Suscripción guardada: ${pedidoToken}`);
-  res.json({ success: true });
-});
-
-// API: Limpiar pedidos antiguos (PROTEGIDO)
-app.post('/api/pedidos/limpiar', requireAuth, (req, res) => {
+// API: Listar pedidos
+app.get('/api/pedidos', requireAuth, async (req, res) => { // ✅ async
   try {
-    const eliminados = limpiarPedidosAntiguos();
+    const { filtro = 'todos' } = req.query;
+    
+    const pedidos = await listarPedidos({ filtro }); // ✅ await
+    
+    const pedidosFormateados = pedidos.map(p => ({
+      token: p.token,
+      numero: p.numero,
+      estado: p.estado,
+      timestamp: p.timestamp,
+      creadoHace: Math.floor((Date.now() - new Date(p.timestamp).getTime()) / 1000 / 60),
+      creadoPor: p.creado_por,
+      marcadoPor: p.marcado_listo_por,
+      retiradoPor: p.retirado_por
+    }));
+    
+    res.json({ success: true, total: pedidosFormateados.length, pedidos: pedidosFormateados });
+  } catch (error) {
+    console.error('❌ Error listando pedidos:', error);
+    res.status(500).json({ error: 'Error obteniendo pedidos' });
+  }
+});
+
+// API: Marcar pedido como LISTO
+app.post('/api/pedido/:token/listo', requireAuth, async (req, res) => {
+  try {
+    const { token } = req.params;
+    const pedido = await obtenerPedido(token); // ✅ await
+    
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+    
+    await actualizarEstadoPedido({ // ✅ await
+      token, 
+      estado: 'listo', 
+      marcadoPor: req.session.user?.username,
+      campoTimestamp: 'listo'
+    });
+    
+    const subscription = await obtenerSuscripcionPush(token); // ✅ await
+    
+    if (subscription) {
+      try {
+        const payload = JSON.stringify({
+          title: `🎉 Pedido ${pedido.numero} LISTO`,
+          body: `Retirá en barra - Mister Grill`,
+          icon: '/icons/icon-192.png',
+          url: `/pedido?token=${token}`,
+          priority: 'high',
+          urgency: 'high'
+        });
+        
+        await webpush.sendNotification(subscription, payload, {
+          TTL: 300,
+          urgency: 'high'
+        });
+        console.log(`🔔 Push enviado: Pedido ${pedido.numero}`);
+      } catch (pushError) {
+        console.error('❌ Error enviando push:', pushError.body || pushError);
+      }
+    }
+    
+    res.json({ success: true, estado: 'listo', numero: pedido.numero });
+  } catch (error) {
+    console.error('❌ Error marcando listo:', error);
+    res.status(500).json({ error: 'Error actualizando pedido' });
+  }
+});
+
+// API: Marcar pedido como RETIRADO
+app.post('/api/pedido/:token/retirado', requireAuth, async (req, res) => { // ✅ async
+  try {
+    const { token } = req.params;
+    const pedido = await obtenerPedido(token); // ✅ await
+    
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+    
+    await actualizarEstadoPedido({ // ✅ await
+      token, 
+      estado: 'retirado', 
+      marcadoPor: req.session.user?.username,
+      campoTimestamp: 'retiro'
+    });
+    
+    console.log(`✅ Pedido #${pedido.numero} marcado como RETIRADO por ${req.session.user?.username}`);
+    res.json({ success: true, estado: 'retirado', numero: pedido.numero });
+  } catch (error) {
+    console.error('❌ Error marcando retirado:', error);
+    res.status(500).json({ error: 'Error actualizando pedido' });
+  }
+});
+
+// Consultar estado de pedido (público)
+app.get('/api/pedido/:token', async (req, res) => { // ✅ async
+  try {
+    const { token } = req.params;
+    const pedido = await obtenerPedido(token); // ✅ await
+    
+    if (pedido) {
+      res.json({
+        estado: pedido.estado,
+        timestamp: pedido.timestamp,
+        numero: pedido.numero
+      });
+    } else {
+      res.json({ estado: 'no_encontrado', timestamp: new Date(), numero: null });
+    }
+  } catch (error) {
+    console.error('❌ Error consultando pedido:', error);
+    res.status(500).json({ error: 'Error consultando pedido' });
+  }
+});
+
+// API: Suscribirse a push (público)
+app.post('/api/subscribe', async (req, res) => {
+  try {
+    const { pedidoToken, subscription } = req.body;
+    
+    if (!pedidoToken || !subscription) {
+      return res.status(400).json({ error: 'Faltan datos' });
+    }
+    
+    await guardarSuscripcionPush({ token: pedidoToken, subscription }); // ✅ await
+    
+    console.log(`✅ Suscripción guardada: ${pedidoToken}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Error guardando suscripción:', error);
+    res.status(500).json({ error: 'Error guardando suscripción' });
+  }
+});
+
+// API: Limpiar pedidos antiguos (protegido)
+app.post('/api/pedidos/limpiar', requireAuth, async (req, res) => { // ✅ async
+  try {
+    const eliminados = await limpiarPedidosAntiguos(); // ✅ await
     res.json({ success: true, eliminados });
   } catch (error) {
     console.error('❌ Error en limpieza:', error);
@@ -413,13 +396,13 @@ app.post('/api/pedidos/limpiar', requireAuth, (req, res) => {
 });
 
 // 🧹 Limpieza automática cada hora
-setInterval(() => {
+setInterval(async () => {
   try {
-    limpiarPedidosAntiguos();
+    await limpiarPedidosAntiguos(); // ✅ await
   } catch (err) {
     console.error('❌ Error en limpieza automática:', err);
   }
-}, 60 * 60 * 1000); // Cada hora
+}, 60 * 60 * 1000);
 
 // Ejecutar limpieza al iniciar
 limpiarPedidosAntiguos();
